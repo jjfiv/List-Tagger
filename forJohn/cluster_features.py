@@ -23,16 +23,15 @@ start_time = time.time()
 books = []
 with open(sys.argv[1], 'r') as f:
 	books = [line.strip() for line in f.readlines()]
-	for book_file in books:
-		sys.stderr.write(book_file+'\n');
-		try:
-			pages = list(get_pg_iterator(book_file))
-			tags, data = easy_feature_table(pages, freq_dict)
-			save_data_target(data, tags, out_name)
-			book_counter += 1
-			sys.stdout.write("Book count is %d after %.2f minutes\n" % (book_counter, (time.time() - start_time)/60))
-		except Exception as ex:
-			template = "An exception of type {0} occured. Arguments:\n{1!r}"
-			message = template.format(type(ex).__name__, ex.args)
-			print message
-			print "Error with book %s" % book_file
+for book_file in books:
+	sys.stderr.write(book_file+'\n');
+	pages = list(get_pg_iterator(book_file))
+	tags, data = easy_feature_table(pages, freq_dict)
+	save_data_target(data, tags, out_name)
+	book_counter += 1
+	sys.stdout.write("Book count is %d after %.2f minutes\n" % (book_counter, (time.time() - start_time)/60))
+	# except Exception as ex:
+	# 	template = "An exception of type {0} occured. Arguments:\n{1!r}"
+	# 	message = template.format(type(ex).__name__, ex.args)
+	# 	print message
+	# 	print "Error with book %s" % book_file

@@ -30,7 +30,7 @@ with open(sys.argv[1], 'r') as f:
 			tags, data = easy_feature_table(pages, freq_dict)
 			save_data_target(data, tags, out_name)
 			book_counter += 1
-			print "Book count is %d after %.2f minutes" % (book_counter, (time.time() - start_time)/60)
+			sys.stdout.write("Book count is %d after %.2f minutes\n" % (book_counter, (time.time() - start_time)/60))
 		except Exception as ex:
 			template = "An exception of type {0} occured. Arguments:\n{1!r}"
 			message = template.format(type(ex).__name__, ex.args)

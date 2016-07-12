@@ -1,0 +1,4 @@
+features*
+*.out
+*.err
+*.pyc

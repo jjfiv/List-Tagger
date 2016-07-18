@@ -9,45 +9,48 @@ import random
 import operator
 import sklearn.metrics
 import itertools
+from scipy.stats import scoreatpercentile
+from scipy.stats import nanmedian
+from sklearn.feature_selection import RFE
 
 classes = ['0', '1', '2', '3']
 
-crfd = {
-	'syl_c':0, # int
-	'syl_pc':1, # bool
-	'syl_cn':2, # bool
-	'prob_c':3, # int
-	'lmarg_c':4, # float.1
-	'lmarg_pc':5, # bool
-	'lmarg_cn':6, # bool
-	'rmarg_c':7, # float.1
-	'rmarg_pc':8, # bool
-	'rmarg_cn':9, # bool
-	'line1':10, # [0,1]
-	'line2':11, # [0,1]
-	'capital_c':12, # bool
-	'rf_c':13, # [0,1]
-	'rf_pc':14, # [0,1]-[0,1]
-	'rf_cn':15, # [0,1]-[0,1]
-	'lmarg_pn':16,
-	'rmarg_pn':17,
-	'syl_pn':18,
-	'tmarg_c':19,
-	'tmarg_p':20,
-	'bmarg_c':21,
-	'bmarg_n':22,
-	'tbmarg_c':23,
-	'tmarg-line_c':24,
-	'capital_cn':25,
-	'capital_pc':26,
-	'capital_pn':27,
-	'repetition_pc':28,
-	'repetition_cn':29,
-	'repetition_pn':30,
-	'capital_cn-lmarg_cn':31, # bool-bool-[-1,0,1]
-	'lines_remaining':32, # int
-	'punc_end':33, # bool
-}
+# crfd = {
+# 	'syl_c':0, # int
+# 	'syl_pc':1, # bool
+# 	'syl_cn':2, # bool
+# 	'prob_c':3, # int
+# 	'lmarg_c':4, # float.1
+# 	'lmarg_pc':5, # bool
+# 	'lmarg_cn':6, # bool
+# 	'rmarg_c':7, # float.1
+# 	'rmarg_pc':8, # bool
+# 	'rmarg_cn':9, # bool
+# 	'line1':10, # [0,1]
+# 	'line2':11, # [0,1]
+# 	'capital_c':12, # bool
+# 	'rf_c':13, # [0,1]
+# 	'rf_pc':14, # [0,1]-[0,1]
+# 	'rf_cn':15, # [0,1]-[0,1]
+# 	'lmarg_pn':16,
+# 	'rmarg_pn':17,
+# 	'syl_pn':18,
+# 	'tmarg_c':19,
+# 	'tmarg_p':20,
+# 	'bmarg_c':21,
+# 	'bmarg_n':22,
+# 	'tbmarg_c':23,
+# 	'tmarg-line_c':24,
+# 	'capital_cn':25,
+# 	'capital_pc':26,
+# 	'capital_pn':27,
+# 	'repetition_pc':28,
+# 	'repetition_cn':29,
+# 	'repetition_pn':30,
+# 	'capital_cn-lmarg_cn':31, # bool-bool-[-1,0,1]
+# 	'lines_remaining':32, # int
+# 	'punc_end':33, # bool
+# }
 
 # treed = {
 # 	'syl_c':0, # int
@@ -86,13 +89,13 @@ crfd = {
 # }
 
 # features that should be taken from surrounding lines
-f_context = ['syl', 'prob', 'lmarg', 'rmarg', 'tmarg', 'bmarg', 'pnoun', 'nums', 'adj', 'det', 'cap']
+f_context = ['prob', 'syl', 'lmarg', 'rmarg', 'tmarg', 'bmarg', 'pnoun', 'nums', 'cap']
 # features that do not need to be taken from surrounding lines
 f_line = ['linenum', 'cap_lines', 'lines_remaining', 'plength', 'mean_line_length', 'std_line_length', 'mean_lmarg', 'std_lmarg', 'mean_rmarg', 'std_rmarg']
 
 treed = {f_context[i]:i for i in range(len(f_context))}
 treed.update({f_line[i]:i+len(f_context) for i in range(len(f_line))})
-invcrfd = {v:k for k,v in crfd.items()}
+# invcrfd = {v:k for k,v in crfd.items()}
 invtreed = {v:k for k,v in treed.items()}
 
 words = nltk.corpus.cmudict.dict()
@@ -271,6 +274,7 @@ def get_feature_table_pg(parent_map, pages, pg_num, freq_dict, dict_sum):
 	line_dims = get_line_dims(lines, pg_dim)
 	lmargins = [line[0] for line in line_dims]
 	rmargins = [pg_dim[0] - line[2] for line in line_dims]
+	prob = sum(get_probability(line, freq_dict, dict_sum) for line in lines)
 	tags = []
 	data = []
 	for i in range(len(lines)):
@@ -313,10 +317,10 @@ def get_line_dims(lines, pg_dim):
 	return line_dims
 
 def get_feature_names(n):
-	fnames = treed.keys()
-	for i in range(1, n+1):
+	fnames = [invtreed[i] for i in range(len(invtreed))]
+	for i in range(n):
 		for name in f_context:
-			fnames.append("%s%dp" % (name, i))
+			fnames.append("%s%dp" % (name, n-i))
 	for i in range(1, n+1):
 		for name in f_context:
 			fnames.append("%s%dn" % (name, i))
@@ -327,6 +331,7 @@ def get_single_feature_vec(parent_map, lines, line_num, pg_dim, freq_dict, dict_
 	line_dims = get_line_dims(lines, pg_dim)
 	lmargins = [line[0] for line in line_dims]
 	rmargins = [pg_dim[0] - line[2] for line in line_dims]
+	# prob = sum(get_probability(line, freq_dict, dict_sum) for line in lines)
 	return get_fvec_precomp(parent_map, line_dims, lmargins, rmargins, lines, line_num, pg_dim, freq_dict, dict_sum)
 
 def get_fvec_precomp(parent_map, line_dims, lmargins, rmargins, lines, line_num, pg_dim, freq_dict, dict_sum):
@@ -368,14 +373,23 @@ def get_fvec_precomp(parent_map, line_dims, lmargins, rmargins, lines, line_num,
 			para = parent_map[line]
 			plength = len(para.findall(".//WORD"))
 			margins = [l_margin/pg_dim[0], r_margin/pg_dim[0], t_margin/pg_dim[1], b_margin/pg_dim[1], syllables, plength]
-			pos = pos_count(line)
-			prob = get_probability(line, freq_dict, dict_sum)
+			# pos = pos_count(line)
+			pnouns = sum(i.text.istitle() for i in line)/len(line)
+			nchars = 0
+			nums = 0
+			for word in line:
+				for c in word.text:
+					if c.isdigit():
+						nums += 1
+					nchars += 1
+			nums /= nchars
 			first_words = []
 			paralines = para.findall(".//LINE")
 			for l in paralines:
 				if len(l) > 0:
 					first_words.append(l[0].text)
-			llengths = map(len, lines)
+			llengths = map(float, map(len, lines)) # will this fix it?
+			prob = get_probability(line, freq_dict, dict_sum)
 			vec[treed['syl']] = syllables
 			vec[treed['prob']] = prob
 			vec[treed['lmarg']] = margins[0]
@@ -384,10 +398,12 @@ def get_fvec_precomp(parent_map, line_dims, lmargins, rmargins, lines, line_num,
 			vec[treed['bmarg']] = margins[3]
 			vec[treed['linenum']] = line_num
 			vec[treed['lines_remaining']] = len(lines)-line_num
-			vec[treed['pnoun']] = pos[0]
-			vec[treed['nums']] = pos[1]
-			vec[treed['adj']] = pos[2]
-			vec[treed['det']] = pos[3]
+			vec[treed['pnoun']] = pnouns
+			vec[treed['nums']] = nums
+			# vec[treed['pnoun']] = pos[0]
+			# vec[treed['nums']] = pos[1]
+			# vec[treed['adj']] = pos[2]
+			# vec[treed['det']] = pos[3]
 			vec[treed['plength']] = plength
 			vec[treed['cap_lines']] = sum(i[0].istitle() for i in first_words)/len(paralines)
 			vec[treed['cap']] = 1 if line[0].text.istitle() else 0
@@ -431,7 +447,6 @@ def get_feature_vec(n, parent_map, lines, line_num, pg_dim, freq_dict, dict_sum)
 	return make_feature_vec(vec, pvecs, nvecs)
 
 def make_feature_vecs(n, vecs, targets=None):
-	print targets
 	results = []
 	if targets is None:
 		targets = range(len(vecs))
@@ -564,7 +579,7 @@ def getelement(arr, index):
 		return arr[index]
 
 # Save data to the training_data file
-def save_data(data, names, target='training_data'):
+def save_data(data, names, target='training_data', mode='a'):
 	names = np.vstack(names)
 	print data.shape
 	print names.shape
@@ -572,7 +587,7 @@ def save_data(data, names, target='training_data'):
 	fmt_string = "%s\t"
 	for i in range(1, data.shape[1] + 1):
 		fmt_string += str(i) + ":%s\t"
-	with open(target, 'ab') as f:
+	with open(target, mode+'b') as f:
 		np.savetxt(f, final_table, fmt=fmt_string)
 
 # Trim whitespace and punctuation
@@ -640,55 +655,55 @@ def pages_from_names(names):
 # where each row contains a page object and column contains the child objects/parameters
 # of the page object
 # .ugh.
-def crfformat(X, Y, names, pages):
-	lines = np.asarray(map(parse_tag, names))
-	lines[:,2] = [i.zfill(4) for i in lines[:,2]]
-	nameinds = np.lexsort(lines.T[::-1])
-	lines = lines[nameinds]
-	names = np.asarray(names)[nameinds]
-	X = X[nameinds]
-	Y = Y[nameinds]
-	pages = [pages[i] for i in nameinds]
+# def crfformat(X, Y, names, pages):
+# 	lines = np.asarray(map(parse_tag, names))
+# 	lines[:,2] = [i.zfill(4) for i in lines[:,2]]
+# 	nameinds = np.lexsort(lines.T[::-1])
+# 	lines = lines[nameinds]
+# 	names = np.asarray(names)[nameinds]
+# 	X = X[nameinds]
+# 	Y = Y[nameinds]
+# 	pages = [pages[i] for i in nameinds]
 
-	### X and Y are now sorted in lexical order according to names
-	index = 0
-	X1 = []
-	Y1 = []
-	names1 = []
-	pages1 = []
-	for book in np.unique(lines[:,0]):
-		contig_X = []
-		contig_Y = []
-		contig_names = []
-		contig_pages = []
+# 	### X and Y are now sorted in lexical order according to names
+# 	index = 0
+# 	X1 = []
+# 	Y1 = []
+# 	names1 = []
+# 	pages1 = []
+# 	for book in np.unique(lines[:,0]):
+# 		contig_X = []
+# 		contig_Y = []
+# 		contig_names = []
+# 		contig_pages = []
 
-		prev_line = int(lines[index,2])
-		contig_X.append(X[index])
-		contig_Y.append(str(Y[index]))
-		contig_names.append(names[index])
-		contig_pages.append(pages[index])
-		index += 1
-		while index < len(lines) and lines[index,0]==book:
-			if len(contig_X) > 0 and not check_adjacent(int(lines[index-1,1]), int(lines[index-1,2]), int(lines[index, 1]), int(lines[index, 2]), pages[index-1]):
-				X1.append(contig_X)
-				Y1.append(contig_Y)
-				names1.append(contig_names)
-				pages1.append(contig_pages)
-				contig_X = []
-				contig_Y = []
-				contig_names = []
-				contig_pages = []
-			contig_X.append(X[index])
-			contig_Y.append(str(Y[index]))
-			contig_names.append(names[index])
-			contig_pages.append(pages[index])
-			index += 1
-		if len(contig_X) > 0:
-			X1.append(contig_X)
-			Y1.append(contig_Y)
-			names1.append(contig_names)
-			pages1.append(contig_pages)
-	return X1, Y1, names1, pages1
+# 		prev_line = int(lines[index,2])
+# 		contig_X.append(X[index])
+# 		contig_Y.append(str(Y[index]))
+# 		contig_names.append(names[index])
+# 		contig_pages.append(pages[index])
+# 		index += 1
+# 		while index < len(lines) and lines[index,0]==book:
+# 			if len(contig_X) > 0 and not check_adjacent(int(lines[index-1,1]), int(lines[index-1,2]), int(lines[index, 1]), int(lines[index, 2]), pages[index-1]):
+# 				X1.append(contig_X)
+# 				Y1.append(contig_Y)
+# 				names1.append(contig_names)
+# 				pages1.append(contig_pages)
+# 				contig_X = []
+# 				contig_Y = []
+# 				contig_names = []
+# 				contig_pages = []
+# 			contig_X.append(X[index])
+# 			contig_Y.append(str(Y[index]))
+# 			contig_names.append(names[index])
+# 			contig_pages.append(pages[index])
+# 			index += 1
+# 		if len(contig_X) > 0:
+# 			X1.append(contig_X)
+# 			Y1.append(contig_Y)
+# 			names1.append(contig_names)
+# 			pages1.append(contig_pages)
+# 	return X1, Y1, names1, pages1
 
 # Takes a dict and returns its values in the order specified in crfd
 def flatten(d):
@@ -888,9 +903,8 @@ def split_books(X, Y, names, test_percent=.2):
 		line_count += sum(mask)
 	return Xlearn, Xtest, Ylearn, Ytest, Nlearn, Ntest
 
-def subtest(XL, YL, XT, YT, feature_names):
+def subtest(model, XL, YL, XT, YT, feature_names):
 	nfeatures = XL.shape[1]
-	model = treeclf
 	rfe = RFE(model, nfeatures-1)
 	print "BEFORE"
 	model.fit(XL, YL)
@@ -911,8 +925,8 @@ def cvtest(n, model, X, Y, names):
 	for i in range(n):
 		XL, XT, YL, YT, NL, NT = split_books(X, Y, names)
 		model.fit(XL, YL)
-		results.append(sklearn.metrics.f1_score(YT, model.predict(XT), average=None)[1])
-	return np.mean(results), np.std(results)
+		results.append(sklearn.metrics.f1_score(YT, model.predict(XT), average='binary', pos_label=2))
+	return results
 
 # perform leave one out on each book and return a list of models
 # and a list of their respective f1 scores
@@ -937,3 +951,14 @@ def loo_validation_model(model, X, Y, names):
 		clf.estimators_ += classifiers[i].estimators_
 		clf.n_estimators = len(clf.estimators_)
 	return clf
+
+def fivenum(v):
+    v = np.array(v)
+    try:
+        np.sum(v)
+    except TypeError:
+        print('Error: you must provide a list or array of only numbers')
+    q1 = scoreatpercentile(v[~np.isnan(v)],25)
+    q3 = scoreatpercentile(v[~np.isnan(v)],75)
+    md = nanmedian(v)
+    return np.nanmin(v), q1, md, q3, np.nanmax(v),

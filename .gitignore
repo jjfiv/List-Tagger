@@ -1,0 +1,4 @@
+*.pyc
+*.libsvm
+*.ttf
+Model

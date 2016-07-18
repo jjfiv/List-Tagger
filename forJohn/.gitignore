@@ -2,3 +2,5 @@ features*
 *.out
 *.err
 *.pyc
+all_jobs.sh
+fewer_books
